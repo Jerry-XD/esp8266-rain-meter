@@ -69,6 +69,8 @@ void setup()
   Serial.println(WiFi.localIP());
   Serial.println();
   Serial.println("55555");
+  Serial.println("55555");
+  Serial.println("55555");
 
   Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
 
