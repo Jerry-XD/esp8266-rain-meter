@@ -81,28 +81,30 @@ DHT dht(DHTPIN, DHTTYPE);
 #include <RtcDS3231.h>
 RtcDS3231<TwoWire> Rtc(Wire);
 #define countof(a) (sizeof(a) / sizeof(a[0]))
+RtcDateTime now;
 
 //Define Firebase Data object
 FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
+FirebaseJson json;
 
 //boolean pordMode = true;
 boolean pordMode = false;
 
 unsigned long currentMillis, previousMillis1, previousMillis2, previousMillis3, previousMillis4, previousMillis5, previousMillis6, previousMillis7 = 0;
 // Task 1 : Push data to Firebase (Database)
-// Task 2 : Delete Data 7 day ago
+// Task 2 : Delete Data 7 day ago & insert backup data
 // Task 3 : Handle WiFi
 // Task 4 : Debounce Interrupt
 // Task 5 : Read Temp, Hum And Push Data to Netpie (Mqtt)
 // Task 6 : Reset cooldwon water
 // Task 7 : Debounce Line notify
-int t3Interval = 2000, t4Interval = 200, t5Interval = 1000;
+int t3Interval = 5000, t4Interval = 200, t5Interval = 2000;
 
-int t1Interval = pordMode ? 60000 * 15 : 15000;
-int t2Interval = pordMode ? 60000 * 60 : 10000;
-int t6Interval = pordMode ? 60000 : 1000;
+int t1Interval = pordMode ? 60000 * 15 : 30000;
+int t2Interval = pordMode ? 60000 * 60 : 60000 * 60;
+int t6Interval = pordMode ? 60000 : 5000;
 int t7Interval = pordMode ? 60000 * 20 : 20000;
 
 char dateTimestring[20];
@@ -110,7 +112,8 @@ char datestring[11];
 String dateTimeNow = "";
 
 uint8_t countWaterPin = D3;
-volatile int waterCount = 0;
+int waterCount = 0;
+float waterTotal = 0;
 bool counted = false;
 const float amountOfWater = 2.794;
 const int waterLimit = 90;
@@ -156,7 +159,7 @@ void setup() {
   }
 
   Rtc.Begin();
-  RtcDateTime now = Rtc.GetDateTime();
+  now = Rtc.GetDateTime();
   Rtc.Enable32kHzPin(false);
   Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeNone);
 
@@ -175,7 +178,7 @@ void setup() {
   if (Portal.begin()) {
     Serial.println("WiFi connected: " + WiFi.localIP().toString());
     digitalWrite(LED_BUILTIN, HIGH);
-    LINE.notifySticker("เครื่องวัดปริมาณน้ำฝนออนไลน์แล้ว !", 446, 1993);
+    //    LINE.notifySticker("เครื่องวัดปริมาณน้ำฝนออนไลน์แล้ว !", 446, 1993);
     //    Config.ticker = false;
   }
   Serial.print("Connecting to Wi-Fi");
@@ -227,11 +230,10 @@ void setup() {
 }
 
 void t1Callback() {
-  RtcDateTime now = Rtc.GetDateTime();
-  //  Serial.println(now);
-  FirebaseJson json;
+  //  waterTotal = waterCount * amountOfWater;
+  now = Rtc.GetDateTime();
   dateTimeNow = printDateTime(now);
-  json.set("water", waterCount * amountOfWater);
+  json.set("water", waterTotal);
   json.set("time", dateTimeNow);
   //  json.set("time/.sv", "timestamp");
   //  Serial.printf("Set json... %s\n", Firebase.RTDB.set(&fbdo, "/testset", &json) ? "ok" : fbdo.errorReason().c_str());
@@ -239,18 +241,12 @@ void t1Callback() {
   //  Firebase.RTDB.set(&fbdo, "/rainmeter/" + printDate(now) + "/" + dateTimeNow, &json);
   //  Serial.printf("Set json... %s\n", Firebase.RTDB.set(&fbdo, "/rainmeter/" + printDate(now) + "/" + dateTimeNow, &json) ? "ok" : fbdo.errorReason().c_str());
 
-  //  Firebase.RTDB.pushJSON(&fbdo, "/" + printDate(now), &json);
-  Serial.println(Firebase.RTDB.pushJSON(&fbdo, "/rainmeter/" + printDate(now), &json));
-  if (waterCount * amountOfWater >= waterLimit && sendLineNotify) {
-    //        LINE.notify("ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !");
-    LINE.notifySticker("ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !", 11538, 51626522);
-    sendLineNotify = false;
-  }
-  Serial.println();
+  Firebase.RTDB.pushJSON(&fbdo, "/rainmeter/" + printDate(now), &json);
+  //  Serial.println(Firebase.RTDB.pushJSON(&fbdo, "/rainmeter/" + printDate(now), &json));
 }
 
 void t2Callback() {
-  RtcDateTime now = Rtc.GetDateTime();
+  now = Rtc.GetDateTime();
   //  int tmpDay = 1;
   //  int tmpMonth = 1;
   //  int tmpYear = 2022;
@@ -303,7 +299,7 @@ void t2Callback() {
 
 void t3Callback() {
   Serial.print("water : ");
-  Serial.println(waterCount * amountOfWater);
+  Serial.println(waterTotal);
   Portal.handleClient();
   if (microgear.connected()) {
     //    Serial.println("NETPIE connected");
@@ -355,13 +351,20 @@ void t6Callback() {
 
 void t7Callback() {
   sendLineNotify = true;
+  if (waterTotal >= waterLimit) {
+    if (sendLineNotify) {
+      LINE.notify("ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !");
+      LINE.notifySticker("ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !", 11538, 51626522);
+      sendLineNotify = false;
+    }
+  }
 }
 
 void loop()
 {
   currentMillis = millis();
   if (currentMillis - previousMillis1 >= t1Interval) {
-    if (WiFi.status() == WL_CONNECTED && Firebase.ready() && previousMillis1 >= 5000) {
+    if (WiFi.status() == WL_CONNECTED && Firebase.ready() && previousMillis1 >= 10000) {
       Serial.println("T1 Run : ");
       t1Callback();
     }
@@ -393,7 +396,7 @@ void loop()
     previousMillis6 = millis();
   }
   if (currentMillis - previousMillis7 >= t7Interval) {
-    //    Serial.println("T7 Run : ");
+    Serial.println("T7 Run : ");
     t7Callback();
     previousMillis7 = millis();
   }
@@ -414,9 +417,10 @@ String printDate(const RtcDateTime & dt)
 void ICACHE_RAM_ATTR countWater() {
   if (!counted) {
     waterCount++;
+    waterTotal = waterCount * amountOfWater;
     counted = true;
-    Serial.print("water count : ");
-    Serial.println(waterCount);
+    //    Serial.print("water count : ");
+    //    Serial.println(waterCount);
   }
 }
 
