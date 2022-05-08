@@ -55,7 +55,10 @@ DHT dht(DHTPIN, DHTTYPE);
 //Provide the RTDB payload printing info and other helper functions.
 #include <addons/RTDBHelper.h>
 
-#include <TridentTD_LineNotify.h>
+//#include <TridentTD_LineNotify.h>
+//#include <ESP_Line_Notify.h>
+/* Define the LineNotifyClient object */
+//LineNotifyClient xd;
 #include <SPI.h>
 #include <SD.h>
 
@@ -131,6 +134,10 @@ File indexFile;
 File dataFile;
 const int sdCardPin = D4;
 
+String req;
+// ข้อความ ที่จะแสดงใน Line
+String txt1 = "ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !";
+
 void setup() {
   /* Add Event listeners */
   /* Call onMsghandler() when new message arraives */
@@ -163,8 +170,6 @@ void setup() {
   Rtc.Enable32kHzPin(false);
   Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeNone);
 
-  // กำหนด Line Token
-  LINE.setToken(LINE_TOKEN);
 
   Serial.println("Starting.....  X)");
   Config.autoReconnect = true;    // Attempt automatic reconnection.
@@ -191,6 +196,12 @@ void setup() {
   Serial.print("Connected with IP: ");
   Serial.println(WiFi.localIP());
   Serial.println();
+
+  // กำหนด Line Token
+  //  LINE.setToken(LINE_TOKEN);
+  //  xd.reconnect_wifi = true;
+  //  xd.token = "f0E3HB6o7EubJvIVNw8AUC8QpoOeJn7H8sD3mUYm5K1";
+  //  xd.message = "ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !";
 
   /* Initial with KEY, SECRET and also set the ALIAS here */
   microgear.init(KEY, SECRET, ALIAS);
@@ -227,10 +238,31 @@ void setup() {
   //Comment or pass false value when WiFi reconnection will control by your code or third party library
   Firebase.reconnectWiFi(false);
   Firebase.setDoubleDigits(5);
+
+  req = "POST /api/notify HTTP/1.1\r\n";
+  req += "Host: notify-api.line.me\r\n";
+  req += "Authorization: Bearer " + String(LINE_TOKEN) + "\r\n";
+  req += "Cache-Control: no-cache\r\n";
+  req += "User-Agent: ESP8266\r\n";
+  req += "Connection: close\r\n";
+  req += "Content-Type: application/x-www-form-urlencoded\r\n";
+  req += "Content-Length: " + String(String("message=" + txt1).length()) + "\r\n";
+  req += "\r\n";
+  req += "message=" + txt1;
 }
 
 void t1Callback() {
   //  waterTotal = waterCount * amountOfWater;
+  if (waterTotal >= waterLimit) {
+    if (sendLineNotify) {
+      notifyLine();
+      //      LineNotify.send(xd);
+      //      LINE.notify("ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !");
+      //      LINE.notifySticker("ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !", 11538, 51626522);
+      sendLineNotify = false;
+    }
+  }
+
   now = Rtc.GetDateTime();
   dateTimeNow = printDateTime(now);
   json.set("water", waterTotal);
@@ -351,13 +383,6 @@ void t6Callback() {
 
 void t7Callback() {
   sendLineNotify = true;
-  if (waterTotal >= waterLimit) {
-    if (sendLineNotify) {
-      LINE.notify("ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !");
-      LINE.notifySticker("ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !", 11538, 51626522);
-      sendLineNotify = false;
-    }
-  }
 }
 
 void loop()
@@ -396,10 +421,32 @@ void loop()
     previousMillis6 = millis();
   }
   if (currentMillis - previousMillis7 >= t7Interval) {
-    Serial.println("T7 Run : ");
+    //    Serial.println("T7 Run : ");
     t7Callback();
     previousMillis7 = millis();
   }
+}
+
+void notifyLine() {
+  WiFiClientSecure client;
+  client.setInsecure();
+  if (!client.connect("notify-api.line.me", 443)) {
+    Serial.println ("ERROR Connection failed");
+    client.stop();
+    return;
+  }
+  client.print(req);
+  Serial.println("[Response:]");
+  while (client.connected())
+  {
+    if (client.available())
+    {
+      String line = client.readStringUntil('\n');
+      Serial.println(line);
+    }
+  }
+  client.stop();
+  Serial.println("\n[Disconnected]");
 }
 
 String printDateTime(const RtcDateTime & dt)
