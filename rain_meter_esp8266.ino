@@ -2,23 +2,23 @@
 // https://dl.espressif.com/dl/package_esp32_index.json
 // http://arduino.esp8266.com/stable/package_esp8266com_index.json
 // **Library**
-// ESP8266 v2.7.4
+// ESP8266 v3.0.2
 // AutoConnect v1.3.1
 // PageBuilder v1.5.2
-// ESP8266 Microgear v1.2.4
-// Firebase Arduino Client Library for ESP8266 and ESP32 v2.8.3
+// Firebase Arduino Client Library for ESP8266 and ESP32 v3.3.0
 // Rtc By Makuna v2.3.5
-// TridentTD_LineNotify v3.0.3
 // DHT sensor library v1.4.3
 // ArduinoJson v6.18.5
 // Adafruit Unified Sense v1.1.5
 // **Fix pyserial : https://forum.arduino.cc/t/pyserial-and-esptools-directory-error/671804/14
 
-
 // 2.794 millimeter per once
 // 90 miilmeter limit
 // 20 min cooldwon reset
 void ICACHE_RAM_ATTR countWater();
+
+boolean pordMode = true;
+//boolean pordMode = false;
 
 //#if defined(ESP32)
 //#include <WiFi.h>
@@ -32,17 +32,7 @@ const char* ssid = "Rain Meter (Setting)";
 const char* password = "11111111";
 AutoConnect      Portal;
 AutoConnectConfig Config(ssid, password);
-
 #include <ESP8266WiFi.h>
-WiFiClient client;
-#include <MicroGear.h>
-MicroGear microgear(client);
-char* subStr = "/mqtt/#";
-#define APPID   "RainMeter"
-#define KEY     "EYJrDZGOrde2czx"
-#define SECRET  "c6MtVH35NN9nEDw3sZSEB6EBG"
-#define ALIAS   "ESP8266"
-int timer = 0;
 
 #include "DHT.h"
 #define DHTPIN 3
@@ -54,13 +44,6 @@ DHT dht(DHTPIN, DHTTYPE);
 
 //Provide the RTDB payload printing info and other helper functions.
 #include <addons/RTDBHelper.h>
-
-//#include <TridentTD_LineNotify.h>
-//#include <ESP_Line_Notify.h>
-/* Define the LineNotifyClient object */
-//LineNotifyClient xd;
-#include <SPI.h>
-#include <SD.h>
 
 /* 1. Define the WiFi credentials */
 //#define WIFI_SSID "babe"
@@ -86,28 +69,28 @@ RtcDS3231<TwoWire> Rtc(Wire);
 #define countof(a) (sizeof(a) / sizeof(a[0]))
 RtcDateTime now;
 
+// SD Card
+#include <SPI.h>
+#include <SD.h>
+
 //Define Firebase Data object
 FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 FirebaseJson json;
 
-//boolean pordMode = true;
-boolean pordMode = false;
-
 unsigned long currentMillis, previousMillis1, previousMillis2, previousMillis3, previousMillis4, previousMillis5, previousMillis6, previousMillis7 = 0;
 // Task 1 : Push data to Firebase (Database)
-// Task 2 : Delete Data 7 day ago & insert backup data
+// Task 2 : Delete Data 7 day ago
 // Task 3 : Handle WiFi
 // Task 4 : Debounce Interrupt
-// Task 5 : Read Temp, Hum And Push Data to Netpie (Mqtt)
+// Task 5 : Read Temp, Hum And Push Data to Firebase
 // Task 6 : Reset cooldwon water
 // Task 7 : Debounce Line notify
-int t3Interval = 5000, t4Interval = 200, t5Interval = 2000;
-
-int t1Interval = pordMode ? 60000 * 15 : 30000;
+int t1Interval = pordMode ? 60000 * 15 : 15000;
 int t2Interval = pordMode ? 60000 * 60 : 60000 * 60;
-int t6Interval = pordMode ? 60000 : 5000;
+int t3Interval = 5000, t4Interval = 200, t5Interval = 2000;
+int t6Interval = pordMode ? 60000 : 2000;
 int t7Interval = pordMode ? 60000 * 20 : 20000;
 
 char dateTimestring[20];
@@ -130,25 +113,21 @@ int day = 0;
 int month = 0;
 int year = 0;
 
-File indexFile;
-File dataFile;
+//File indexFile;
+//File dataFile;
+File myFile;
 const int sdCardPin = D4;
 
+int h = 0;
+int t = 0;
+
+WiFiClientSecure client;
 String req;
 // ข้อความ ที่จะแสดงใน Line
 String txt1 = "ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !";
+String line;
 
 void setup() {
-  /* Add Event listeners */
-  /* Call onMsghandler() when new message arraives */
-  microgear.on(MESSAGE, onMsghandler);
-  /* Call onFoundgear() when new gear appear */
-  microgear.on(PRESENT, onFoundgear);
-  /* Call onLostgear() when some gear goes offline */
-  microgear.on(ABSENT, onLostgear);
-  /* Call onConnected() when NETPIE connection is established */
-  microgear.on(CONNECTED, onConnected);
-
   //  ปี เดือน วัน ชั่วโมง นาที วินาที
   //  สำหรับตั้งเวลา
   //  RtcDateTime compiled = RtcDateTime(2021, 12, 11, 17, 19, 00);
@@ -169,7 +148,6 @@ void setup() {
   now = Rtc.GetDateTime();
   Rtc.Enable32kHzPin(false);
   Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeNone);
-
 
   Serial.println("Starting.....  X)");
   Config.autoReconnect = true;    // Attempt automatic reconnection.
@@ -197,16 +175,6 @@ void setup() {
   Serial.println(WiFi.localIP());
   Serial.println();
 
-  // กำหนด Line Token
-  //  LINE.setToken(LINE_TOKEN);
-  //  xd.reconnect_wifi = true;
-  //  xd.token = "f0E3HB6o7EubJvIVNw8AUC8QpoOeJn7H8sD3mUYm5K1";
-  //  xd.message = "ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !";
-
-  /* Initial with KEY, SECRET and also set the ALIAS here */
-  microgear.init(KEY, SECRET, ALIAS);
-  /* connect to NETPIE to a specific APPID */
-  microgear.connect(APPID);
   dht.begin();
 
   Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
@@ -252,13 +220,10 @@ void setup() {
 }
 
 void t1Callback() {
-  //  waterTotal = waterCount * amountOfWater;
+  waterTotal = waterCount * amountOfWater;
   if (waterTotal >= waterLimit) {
     if (sendLineNotify) {
       notifyLine();
-      //      LineNotify.send(xd);
-      //      LINE.notify("ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !");
-      //      LINE.notifySticker("ปริมาณน้ำฝนเกิน 90 มิลลิเมตรแล้ว !", 11538, 51626522);
       sendLineNotify = false;
     }
   }
@@ -273,8 +238,21 @@ void t1Callback() {
   //  Firebase.RTDB.set(&fbdo, "/rainmeter/" + printDate(now) + "/" + dateTimeNow, &json);
   //  Serial.printf("Set json... %s\n", Firebase.RTDB.set(&fbdo, "/rainmeter/" + printDate(now) + "/" + dateTimeNow, &json) ? "ok" : fbdo.errorReason().c_str());
 
-  Firebase.RTDB.pushJSON(&fbdo, "/rainmeter/" + printDate(now), &json);
+  Firebase.RTDB.pushJSON(&fbdo, F("/rainmeter/" ) + printDate(now), &json);
   //  Serial.println(Firebase.RTDB.pushJSON(&fbdo, "/rainmeter/" + printDate(now), &json));
+
+  myFile = SD.open(printDate(now) + ".txt", FILE_WRITE);
+  // ถ้าเปิดไฟล์สำเร็จ ให้เขียนข้อมูลเพิ่มลงไป
+  if (myFile) {
+    //    Serial.print("Writing to test.txt...");
+    myFile.println("time:" + dateTimeNow + ",water:" + waterTotal + ",temp:" + t + ",hum:" + h); // สั่งให้เขียนข้อมูล
+    myFile.close(); // ปิดไฟล์
+    //    Serial.println("done.");
+  } else {
+    // ถ้าเปิดไฟลืไม่สำเร็จ ให้แสดง error
+    Serial.println("error opening test.txt");
+  }
+  //  notifyLine();
 }
 
 void t2Callback() {
@@ -330,21 +308,9 @@ void t2Callback() {
 }
 
 void t3Callback() {
-  Serial.print("water : ");
+  Serial.print(F("water : "));
   Serial.println(waterTotal);
   Portal.handleClient();
-  if (microgear.connected()) {
-    //    Serial.println("NETPIE connected");
-    microgear.loop();
-  }
-  else {
-    Serial.println("connection lost, reconnect...");
-    if (timer >= 5000) {
-      microgear.connect(APPID);
-      timer = 0;
-    }
-    else timer += 100;
-  }
 }
 
 void t4Callback() {
@@ -352,8 +318,8 @@ void t4Callback() {
 }
 
 void t5Callback() {
-  int h = dht.readHumidity();
-  int t = dht.readTemperature();
+  h = dht.readHumidity();
+  t = dht.readTemperature();
   if (isnan(h) || isnan(t)) {
     Serial.println(F("Failed to read from DHT sensor!"));
     h = 0;
@@ -365,8 +331,8 @@ void t5Callback() {
   //  Serial.print(t);
   //  Serial.println(F(" C "));
 
-  microgear.publish("/mqtt/temp", t);
-  microgear.publish("/mqtt/hum", h);
+  Firebase.RTDB.set(&fbdo, F("/test/temp"), t);
+  Firebase.RTDB.set(&fbdo, F("/test/hum"), h);
 }
 
 void t6Callback() {
@@ -390,13 +356,13 @@ void loop()
   currentMillis = millis();
   if (currentMillis - previousMillis1 >= t1Interval) {
     if (WiFi.status() == WL_CONNECTED && Firebase.ready() && previousMillis1 >= 10000) {
-      Serial.println("T1 Run : ");
+      Serial.println(F("T1 Run : "));
       t1Callback();
     }
     previousMillis1 = millis();
   }
   if (currentMillis - previousMillis2 >= t2Interval) {
-    Serial.println("T2 Run : ");
+    Serial.println(F("T2 Run : "));
     t2Callback();
     previousMillis2 = millis();
   }
@@ -428,7 +394,6 @@ void loop()
 }
 
 void notifyLine() {
-  WiFiClientSecure client;
   client.setInsecure();
   if (!client.connect("notify-api.line.me", 443)) {
     Serial.println ("ERROR Connection failed");
@@ -436,17 +401,17 @@ void notifyLine() {
     return;
   }
   client.print(req);
-  Serial.println("[Response:]");
+  Serial.println(F("[Response:]"));
   while (client.connected())
   {
     if (client.available())
     {
-      String line = client.readStringUntil('\n');
+      line = client.readStringUntil('\n');
       Serial.println(line);
     }
   }
   client.stop();
-  Serial.println("\n[Disconnected]");
+  Serial.println(F("\n[Disconnected]"));
 }
 
 String printDateTime(const RtcDateTime & dt)
@@ -469,33 +434,4 @@ void ICACHE_RAM_ATTR countWater() {
     //    Serial.print("water count : ");
     //    Serial.println(waterCount);
   }
-}
-
-/* If a new message arrives, do this */
-void onMsghandler(char *topic, uint8_t* msg, unsigned int msglen) {
-  Serial.print("Incoming message --> ");
-  msg[msglen] = '\0';
-  Serial.println((char *)msg);
-}
-
-void onFoundgear(char *attribute, uint8_t* msg, unsigned int msglen) {
-  Serial.print("Found new member --> ");
-  for (int i = 0; i < msglen; i++)
-    Serial.print((char)msg[i]);
-  Serial.println();
-}
-
-void onLostgear(char *attribute, uint8_t* msg, unsigned int msglen) {
-  Serial.print("Lost member --> ");
-  for (int i = 0; i < msglen; i++)
-    Serial.print((char)msg[i]);
-  Serial.println();
-}
-
-/* When a microgear is connected, do this */
-void onConnected(char *attribute, uint8_t* msg, unsigned int msglen) {
-  Serial.println("Connected to NETPIE...");
-  /* Set the alias of this microgear ALIAS */
-  microgear.setAlias(ALIAS);
-  //    microgear.subscribe(subStr);
 }
