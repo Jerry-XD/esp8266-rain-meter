@@ -18,7 +18,7 @@
 void ICACHE_RAM_ATTR countWater();
 
 boolean pordMode = true;
-//boolean pordMode = false;
+// boolean pordMode = false;
 
 //#if defined(ESP32)
 //#include <WiFi.h>
@@ -27,10 +27,11 @@ boolean pordMode = true;
 //#endif
 #include <Firebase_ESP_Client.h>
 
+// IP 172.217.28.1
 #include <AutoConnect.h>
 const char* ssid = "Rain Meter (Setting)";
 const char* password = "11111111";
-AutoConnect      Portal;
+AutoConnect Portal;
 AutoConnectConfig Config(ssid, password);
 #include <ESP8266WiFi.h>
 
@@ -54,13 +55,13 @@ DHT dht(DHTPIN, DHTTYPE);
 #define API_KEY "AIzaSyA6MFI7sd9MSxkPI3T868jnoDjtHcMXZ7I"
 
 /* 3. Define the RTDB URL */
-#define DATABASE_URL "rain-meter-5d6eb-default-rtdb.asia-southeast1.firebasedatabase.app" //<databaseName>.firebaseio.com or <databaseName>.<region>.firebasedatabase.app
+#define DATABASE_URL "rain-meter-5d6eb-default-rtdb.asia-southeast1.firebasedatabase.app"  //<databaseName>.firebaseio.com or <databaseName>.<region>.firebasedatabase.app
 
 /* 4. Define the user Email and password that alreadey registerd or added in your project */
 #define USER_EMAIL "cpe.rainmeter@gmail.com"
 #define USER_PASSWORD "cpe123456"
 
-#define LINE_TOKEN  "f0E3HB6o7EubJvIVNw8AUC8QpoOeJn7H8sD3mUYm5K1"
+#define LINE_TOKEN "f0E3HB6o7EubJvIVNw8AUC8QpoOeJn7H8sD3mUYm5K1"
 
 //  Rtc DS3231
 #include <Wire.h>
@@ -150,8 +151,8 @@ void setup() {
   Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeNone);
 
   Serial.println("Starting.....  X)");
-  Config.autoReconnect = true;    // Attempt automatic reconnection.
-  Config.reconnectInterval = 1;   // Seek interval time is 180[s].
+  Config.autoReconnect = true;   // Attempt automatic reconnection.
+  Config.reconnectInterval = 1;  // Seek interval time is 180[s].
   digitalWrite(LED_BUILTIN, LOW);
   //  Config.ticker = true;
   //  Config.tickerPort = 2;
@@ -165,8 +166,7 @@ void setup() {
     //    Config.ticker = false;
   }
   Serial.print("Connecting to Wi-Fi");
-  while (WiFi.status() != WL_CONNECTED)
-  {
+  while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
     delay(300);
   }
@@ -190,7 +190,7 @@ void setup() {
   config.database_url = DATABASE_URL;
 
   /* Assign the callback function for the long running token generation task */
-  config.token_status_callback = tokenStatusCallback; //see addons/TokenHelper.h
+  config.token_status_callback = tokenStatusCallback;  //see addons/TokenHelper.h
 
   //Or use legacy authenticate method
   //config.database_url = DATABASE_URL;
@@ -238,19 +238,20 @@ void t1Callback() {
   //  Firebase.RTDB.set(&fbdo, "/rainmeter/" + printDate(now) + "/" + dateTimeNow, &json);
   //  Serial.printf("Set json... %s\n", Firebase.RTDB.set(&fbdo, "/rainmeter/" + printDate(now) + "/" + dateTimeNow, &json) ? "ok" : fbdo.errorReason().c_str());
 
-  Firebase.RTDB.pushJSON(&fbdo, F("/rainmeter/" ) + printDate(now), &json);
+  Firebase.RTDB.pushJSON(&fbdo, F("/rainmeter/") + printDate(now), &json);
+  Serial.println("Push data to firebase");
   //  Serial.println(Firebase.RTDB.pushJSON(&fbdo, "/rainmeter/" + printDate(now), &json));
 
   myFile = SD.open(printDate(now) + ".txt", FILE_WRITE);
   // ถ้าเปิดไฟล์สำเร็จ ให้เขียนข้อมูลเพิ่มลงไป
   if (myFile) {
     //    Serial.print("Writing to test.txt...");
-    myFile.println("time:" + dateTimeNow + ",water:" + waterTotal + ",temp:" + t + ",hum:" + h); // สั่งให้เขียนข้อมูล
-    myFile.close(); // ปิดไฟล์
+    myFile.println("time:" + dateTimeNow + ",water:" + waterTotal + ",temp:" + t + ",hum:" + h);  // สั่งให้เขียนข้อมูล
+    myFile.close();                                                                               // ปิดไฟล์
     //    Serial.println("done.");
   } else {
     // ถ้าเปิดไฟลืไม่สำเร็จ ให้แสดง error
-    Serial.println("error opening test.txt");
+    Serial.println("error opening " + printDate(now) + ".txt");
   }
   //  notifyLine();
 }
@@ -351,8 +352,7 @@ void t7Callback() {
   sendLineNotify = true;
 }
 
-void loop()
-{
+void loop() {
   currentMillis = millis();
   if (currentMillis - previousMillis1 >= t1Interval) {
     if (WiFi.status() == WL_CONNECTED && Firebase.ready() && previousMillis1 >= 10000) {
@@ -396,16 +396,14 @@ void loop()
 void notifyLine() {
   client.setInsecure();
   if (!client.connect("notify-api.line.me", 443)) {
-    Serial.println ("ERROR Connection failed");
+    Serial.println("ERROR Connection failed");
     client.stop();
     return;
   }
   client.print(req);
   Serial.println(F("[Response:]"));
-  while (client.connected())
-  {
-    if (client.available())
-    {
+  while (client.connected()) {
+    if (client.available()) {
       line = client.readStringUntil('\n');
       Serial.println(line);
     }
@@ -414,14 +412,12 @@ void notifyLine() {
   Serial.println(F("\n[Disconnected]"));
 }
 
-String printDateTime(const RtcDateTime & dt)
-{
+String printDateTime(const RtcDateTime& dt) {
   snprintf_P(dateTimestring, countof(dateTimestring), PSTR("%02u-%02u-%04u %02u:%02u:%02u"), dt.Day(), dt.Month(), dt.Year(), dt.Hour(), dt.Minute(), dt.Second());
   return dateTimestring;
 }
 
-String printDate(const RtcDateTime & dt)
-{
+String printDate(const RtcDateTime& dt) {
   snprintf_P(datestring, countof(datestring), PSTR("%02u-%02u-%04u"), dt.Day(), dt.Month(), dt.Year());
   return datestring;
 }
